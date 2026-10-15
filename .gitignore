@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+.venv*/
+.private/
+.env
+iotics_app_profile.json
+*.xapk
+*.apk

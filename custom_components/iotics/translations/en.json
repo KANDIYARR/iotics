@@ -1,0 +1,25 @@
+{
+  "title": "Iotics",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your Iotics account",
+        "description": "First copy your private iotics_app_profile.json to the Home Assistant configuration folder. Sign in with your existing Iotics app account. This is an unofficial integration.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "missing_profile": "The private iotics_app_profile.json file is missing or invalid. Copy it into your Home Assistant configuration folder and try again.",
+      "invalid_auth": "Iotics rejected the login. Check your credentials and account verification in the Iotics app.",
+      "cannot_connect": "Unable to retrieve your Iotics devices. Check the internet connection and try again."
+    },
+    "abort": {
+      "already_configured": "This Iotics account is already configured.",
+      "wrong_account": "Sign in with the same Iotics account as before.",
+      "reauth_successful": "Iotics sign-in updated successfully."
+    }
+  }
+}
