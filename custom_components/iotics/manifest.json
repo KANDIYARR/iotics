@@ -1,16 +1,16 @@
 {
+  "domain": "iotics",
+  "name": "Iotics",
   "codeowners": [
     "@KANDIYARR"
   ],
   "config_flow": true,
   "documentation": "https://github.com/KANDIYARR/iotics",
-  "domain": "iotics",
   "integration_type": "hub",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/KANDIYARR/iotics/issues",
-  "name": "Iotics",
   "requirements": [
-    "paho-mqtt==2.1.0"
+    "paho-mqtt>=2.1.0"
   ],
   "version": "0.1.0"
 }
