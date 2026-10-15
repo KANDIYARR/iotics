@@ -51,3 +51,7 @@ python -m pytest tests_ha -q
 Account credentials are stored in Home Assistant configuration-entry storage. Protect backups. Diagnostic exports omit account identifiers, device tokens and connection credentials.
 
 This project is independent of Iotics and is intended as a HACS **custom repository**, not an integration included in HACS's default catalog.
+
+## License
+
+[MIT License](LICENSE). Copyright (c) 2026 Vinoth Sakthivel.
