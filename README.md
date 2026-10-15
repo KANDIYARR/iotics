@@ -1,5 +1,7 @@
 # Iotics for Home Assistant
 
+<img src="https://raw.githubusercontent.com/KANDIYARR/iotics/main/custom_components/iotics/brand/icon.png" alt="Iotics logo" width="128" height="128">
+
 **Author:** Vinoth Sakthivel  
 **Email:** [vinoth@kandiyar.com](mailto:vinoth@kandiyar.com)
 
@@ -55,3 +57,11 @@ This project is independent of Iotics and is intended as a HACS **custom reposit
 ## License
 
 [MIT License](LICENSE). Copyright (c) 2026 Vinoth Sakthivel.
+
+## Logo display
+
+The supplied Iotics icon is bundled in `custom_components/iotics/brand/icon.png`. Home Assistant 2026.3 or newer supports these local brand images after installation and restart. The same image appears on this README and the HACS repository details page.
+
+Some HACS versions still load search-list icons from the central Home Assistant branding service instead of local integration images. On those versions the search result may retain its placeholder; this repository cannot override that URL. See [Home Assistant brand-image support](https://developers.home-assistant.io/docs/core/integration/brand_images/) and [the HACS tracking issue](https://github.com/hacs/integration/issues/5402).
+
+The logo identifies Iotics; trademark rights remain with their respective owner. The MIT license applies to this project's code, not ownership of the Iotics trademark.
