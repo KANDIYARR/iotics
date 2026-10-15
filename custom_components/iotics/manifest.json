@@ -3,11 +3,11 @@
     "@KANDIYARR"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/KANDIYARR/iotics-home-assistant",
+  "documentation": "https://github.com/KANDIYARR/iotics",
   "domain": "iotics",
   "integration_type": "hub",
   "iot_class": "cloud_push",
-  "issue_tracker": "https://github.com/KANDIYARR/iotics-home-assistant/issues",
+  "issue_tracker": "https://github.com/KANDIYARR/iotics/issues",
   "name": "Iotics",
   "requirements": [
     "paho-mqtt==2.1.0"

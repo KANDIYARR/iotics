@@ -8,7 +8,7 @@ Unofficial Home Assistant integration for Iotics panels. Sign in with your Iotic
 ## Install with HACS
 
 1. Open **HACS → ⋮ → Custom repositories**.
-2. Add `https://github.com/KANDIYARR/iotics-home-assistant` with type **Integration**.
+2. Add `https://github.com/KANDIYARR/iotics` with type **Integration**.
 3. Find **Iotics** in HACS and download it.
 4. Copy your private `iotics_app_profile.json` into the Home Assistant configuration folder, alongside `configuration.yaml`.
 5. Restart Home Assistant.
