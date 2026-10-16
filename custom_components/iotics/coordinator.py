@@ -22,9 +22,11 @@ class IoticsCoordinator(DataUpdateCoordinator):
         self.last_seen = {}
         self.online = {}
         self._pending = {}
+        self._echoed = set()
+        self._feedback_revision = {}
         self._command_locks = {}
         self._closed = False
-        self.command_stats = dict(sent=0, confirmed=0, timed_out=0, send_failed=0)
+        self.command_stats = dict(sent=0, confirmed=0, timed_out=0, send_failed=0, assumed=0)
         self.feedback_stats = dict(retained=0, invalid=0, status=0, channel=0, command_echo=0)
 
 
@@ -81,6 +83,10 @@ class IoticsCoordinator(DataUpdateCoordinator):
             return
         if len(parts) == 4 and parts[3] == "sw":
             self.feedback_stats["command_echo"] += 1
+            feedback = topic[:-2] + "hw"
+            pending = self._pending.get(feedback)
+            if pending and payload == str(pending[0]).encode("ascii"):
+                self._echoed.add(feedback)
             return
         if len(parts) == 3 and parts[2] == "hwstatus":
             value = feedback_value(payload)
@@ -96,7 +102,9 @@ class IoticsCoordinator(DataUpdateCoordinator):
                 self.feedback_stats["invalid"] += 1
                 return
             self.feedback_stats["channel"] += 1
-            self.states[(token, channel)] = value
+            key = (token, channel)
+            self._feedback_revision[key] = self._feedback_revision.get(key, 0) + 1
+            self.states[key] = value
             self.confirmed.add((token, channel))
             self.online[token] = True
             pending = self._pending.get(topic)
@@ -127,6 +135,9 @@ class IoticsCoordinator(DataUpdateCoordinator):
             except ValueError as err:
                 raise HomeAssistantError(str(err)) from err
             feedback = topic[:-2] + "hw"
+            key = (token, channel)
+            revision = self._feedback_revision.get(key, 0)
+            self._echoed.discard(feedback)
             future = self.hass.loop.create_future()
             self._pending[feedback] = (int(payload), future)
             try:
@@ -141,12 +152,23 @@ class IoticsCoordinator(DataUpdateCoordinator):
                 ) from err
             except TimeoutError as err:
                 self.command_stats["timed_out"] += 1
-                raise HomeAssistantError(
-                    "Iotics command sent, but no matching hardware feedback arrived within "
-                    "10 seconds. Check whether the physical device changed before retrying"
-                ) from err
+                if self._feedback_revision.get(key, 0) != revision:
+                    raise HomeAssistantError(
+                        "Iotics reported a different state after the command; check the device"
+                    ) from err
+                if feedback not in self._echoed or not self.is_available(token):
+                    raise HomeAssistantError(
+                        "No Iotics command confirmation; check the connection and physical device"
+                    ) from err
+                # An echoed command confirms broker receipt, not physical actuation.
+                # Panels without channel feedback need an explicitly assumed state.
+                self.states[key] = int(payload)
+                self.confirmed.discard(key)
+                self.command_stats["assumed"] += 1
+                self.async_update_listeners()
             finally:
                 self._pending.pop(feedback, None)
+                self._echoed.discard(feedback)
                 if not future.done():
                     future.cancel()
 

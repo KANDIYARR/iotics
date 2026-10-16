@@ -287,7 +287,7 @@ async def test_feedback_timeout_reports_uncertain_outcome(tmp_path):
     c = coordinator(tmp_path)
     c.message_received('io/owned-device/b1/hw', b'1')
     with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=AsyncMock(side_effect=TimeoutError())):
-        with pytest.raises(HomeAssistantError, match='no matching hardware feedback'):
+        with pytest.raises(HomeAssistantError, match='No Iotics command confirmation'):
             await c.async_command('owned-device', 'b1', 0)
     assert c.states[('owned-device', 'b1')] == 1
     assert not c._pending
@@ -320,3 +320,49 @@ async def test_diagnostics_contain_counts_without_identifiers(tmp_path):
     assert result['feedback_counts']['retained'] == 1
     assert 'owned-device' not in json.dumps(result)
     assert 'user@example' not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_broker_echo_without_feedback_uses_assumed_state(tmp_path):
+    c = coordinator(tmp_path)
+    c.message_received('io/owned-device/b1/hw', b'1')
+    async def timeout(_future, timeout):
+        c.message_received('io/owned-device/b1/sw', b'0')
+        raise TimeoutError
+    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
+        await c.async_command('owned-device', 'b1', 0)
+    entity = IoticsSwitch(c, 'account', 'owned-device', 'b1')
+    assert entity.is_on is False
+    assert entity.assumed_state is True
+    assert c.command_stats['assumed'] == 1
+    assert c.command_stats['confirmed'] == 0
+    c.message_received('io/owned-device/b1/hw', b'1')
+    assert entity.is_on is True
+    assert entity.assumed_state is False
+
+
+@pytest.mark.asyncio
+async def test_contradictory_hardware_state_is_not_overwritten_by_echo(tmp_path):
+    c = coordinator(tmp_path)
+    async def timeout(_future, timeout):
+        c.message_received('io/owned-device/b1/sw', b'0')
+        c.message_received('io/owned-device/b1/hw', b'1')
+        raise TimeoutError
+    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
+        with pytest.raises(HomeAssistantError, match='different state'):
+            await c.async_command('owned-device', 'b1', 0)
+    assert c.states[('owned-device', 'b1')] == 1
+    assert c.command_stats['assumed'] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload,retained', [(b'1', False), (b'0', True)])
+async def test_wrong_or_retained_echo_cannot_assume_success(tmp_path, payload, retained):
+    c = coordinator(tmp_path)
+    async def timeout(_future, timeout):
+        c.message_received('io/owned-device/b1/sw', payload, retained)
+        raise TimeoutError
+    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
+        with pytest.raises(HomeAssistantError, match='No Iotics command confirmation'):
+            await c.async_command('owned-device', 'b1', 0)
+    assert c.command_stats['assumed'] == 0

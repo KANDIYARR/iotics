@@ -99,7 +99,7 @@ You can rename entities, assign rooms, and use supported controls in Home Assist
 | Send a command | The integration waits up to **10 seconds** for matching feedback. |
 | Keep current | Device discovery refreshes every **5 minutes**; status queries run every **minute**. |
 
-Commands are not queued for replay while offline. A timeout means confirmation was not received — the device may still have acted. Check its actual state before retrying.
+Commands are not queued for replay while offline. If the broker echoes the command but no channel feedback arrives within ten seconds, the requested state is shown as **assumed**, not hardware-confirmed. A contradictory hardware reply, missing broker echo, or lost connection still raises an error. Later hardware feedback overrides assumed state.
 
 ## Troubleshooting
 
@@ -128,6 +128,10 @@ Account credentials are stored in Home Assistant's configuration-entry storage. 
 
 </details>
 
+### Panels without channel feedback
+
+Version 0.1.3 supports panels that operate but do not send matching channel feedback: a matching broker command echo permits an explicitly assumed state after ten seconds. This does not prove physical actuation. Hardware feedback remains authoritative.
+
 ### Troubleshooting a command timeout
 
 Version 0.1.2 matches the app's first-byte status decoding and distinguishes send failures from missing feedback. It also includes anonymous command/feedback counters in diagnostics. This does not establish that all switch models respond to the implemented commands.
@@ -136,7 +140,7 @@ If a control still fails, note whether the physical load changed, then open the 
 
 ## Development and verification
 
-**23 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
+**27 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
 
 ```sh
 python -m pip install -r tests_ha/requirements.txt
