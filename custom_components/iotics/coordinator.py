@@ -6,7 +6,7 @@ import time
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from .api import AuthError, ApiError
-from .protocol import command, integer, parse_devices
+from .protocol import command, feedback_value, integer, parse_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ class IoticsCoordinator(DataUpdateCoordinator):
         self._pending = {}
         self._command_locks = {}
         self._closed = False
+        self.command_stats = dict(sent=0, confirmed=0, timed_out=0, send_failed=0)
+        self.feedback_stats = dict(retained=0, invalid=0, status=0, channel=0, command_echo=0)
+
 
     async def _async_update_data(self):
         try:
@@ -67,26 +70,32 @@ class IoticsCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     def message_received(self, topic, payload, retained=False):
-        if self._closed or retained:
+        if self._closed:
             return
         parts = topic.split("/")
         if len(parts) not in (3, 4) or parts[0] != "io" or parts[1] not in (self.data or {}):
             return
         token = parts[1]
-        try:
-            value = payload.decode("ascii")
-        except UnicodeDecodeError:
+        if retained:
+            self.feedback_stats["retained"] += 1
+            return
+        if len(parts) == 4 and parts[3] == "sw":
+            self.feedback_stats["command_echo"] += 1
             return
         if len(parts) == 3 and parts[2] == "hwstatus":
-            value = integer(value)
+            value = feedback_value(payload)
             if value is None:
+                self.feedback_stats["invalid"] += 1
                 return
+            self.feedback_stats["status"] += 1
             self.online[token] = value == 1
         elif len(parts) == 4 and parts[3] == "hw" and parts[2] in self.data[token].channels:
             channel = parts[2]
-            value = integer(value, 1, 4) if channel in ("l1", "l2") else integer(value)
+            value = feedback_value(payload, 1, 4) if channel in ("l1", "l2") else feedback_value(payload)
             if value is None:
+                self.feedback_stats["invalid"] += 1
                 return
+            self.feedback_stats["channel"] += 1
             self.states[(token, channel)] = value
             self.confirmed.add((token, channel))
             self.online[token] = True
@@ -122,9 +131,20 @@ class IoticsCoordinator(DataUpdateCoordinator):
             self._pending[feedback] = (int(payload), future)
             try:
                 self.transport.publish(topic, payload)
+                self.command_stats["sent"] += 1
                 await asyncio.wait_for(future, timeout=10)
-            except (ConnectionError, TimeoutError) as err:
-                raise HomeAssistantError("No hardware confirmation; check the Iotics app") from err
+                self.command_stats["confirmed"] += 1
+            except ConnectionError as err:
+                self.command_stats["send_failed"] += 1
+                raise HomeAssistantError(
+                    "Unable to send the Iotics command; check the MQTT connection"
+                ) from err
+            except TimeoutError as err:
+                self.command_stats["timed_out"] += 1
+                raise HomeAssistantError(
+                    "Iotics command sent, but no matching hardware feedback arrived within "
+                    "10 seconds. Check whether the physical device changed before retrying"
+                ) from err
             finally:
                 self._pending.pop(feedback, None)
                 if not future.done():

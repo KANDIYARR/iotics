@@ -128,9 +128,15 @@ Account credentials are stored in Home Assistant's configuration-entry storage. 
 
 </details>
 
+### Troubleshooting a command timeout
+
+Version 0.1.2 matches the app's first-byte status decoding and distinguishes send failures from missing feedback. It also includes anonymous command/feedback counters in diagnostics. This does not establish that all switch models respond to the implemented commands.
+
+If a control still fails, note whether the physical load changed, then open the Iotics integration menu under **Settings → Devices & services** and download its diagnostics. The counters distinguish command echoes, actual channel feedback, retained messages, and timeouts without exposing topics, device tokens, credentials, or payloads.
+
 ## Development and verification
 
-**15 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
+**23 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
 
 ```sh
 python -m pip install -r tests_ha/requirements.txt

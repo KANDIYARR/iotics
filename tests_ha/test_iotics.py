@@ -254,3 +254,69 @@ async def test_discovery_additions_and_removals(tmp_path):
     c.async_update_listeners()
     assert not entity.available
     c.transport.set_tokens.assert_called_with({})
+
+
+@pytest.mark.asyncio
+async def test_turn_off_waits_for_actual_off_feedback(tmp_path):
+    c = coordinator(tmp_path)
+    c.message_received('io/owned-device/b1/hw', b'1')
+    switch = IoticsSwitch(c, 'account', 'owned-device', 'b1')
+    task = asyncio.create_task(switch.async_turn_off())
+    await asyncio.sleep(0)
+    c.transport.publish.assert_called_once_with('io/owned-device/b1/sw', '0')
+    c.message_received('io/owned-device/b1/sw', b'0')
+    c.message_received('io/owned-device/b1/hw', b'1')
+    assert switch.is_on is True
+    assert not task.done()
+    c.message_received('io/owned-device/b1/hw', b'0')
+    await task
+    assert switch.is_on is False
+
+
+@pytest.mark.asyncio
+async def test_send_failure_is_distinct_from_feedback_timeout(tmp_path):
+    c = coordinator(tmp_path)
+    c.transport.publish.side_effect = ConnectionError()
+    with pytest.raises(HomeAssistantError, match='Unable to send'):
+        await c.async_command('owned-device', 'b1', 0)
+    assert not c._pending
+
+
+@pytest.mark.asyncio
+async def test_feedback_timeout_reports_uncertain_outcome(tmp_path):
+    c = coordinator(tmp_path)
+    c.message_received('io/owned-device/b1/hw', b'1')
+    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=AsyncMock(side_effect=TimeoutError())):
+        with pytest.raises(HomeAssistantError, match='no matching hardware feedback'):
+            await c.async_command('owned-device', 'b1', 0)
+    assert c.states[('owned-device', 'b1')] == 1
+    assert not c._pending
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [b"0", b"0\x00", b"0\r\n", b"0" + b"\x00" * 32])
+async def test_off_feedback_matches_app_first_byte_decoder(tmp_path, payload):
+    c = coordinator(tmp_path)
+    c.message_received('io/owned-device/b1/hw', b'1')
+    task = asyncio.create_task(c.async_command('owned-device', 'b1', 0))
+    await asyncio.sleep(0)
+    c.message_received('io/owned-device/b1/hw', payload)
+    await task
+    assert c.states[('owned-device', 'b1')] == 0
+    assert c.command_stats['confirmed'] == 1
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_contain_counts_without_identifiers(tmp_path):
+    from custom_components.iotics.diagnostics import async_get_config_entry_diagnostics
+    c = coordinator(tmp_path)
+    c.hass.data['iotics'] = {'entry': c}
+    c.message_received('io/owned-device/b1/sw', b'0')
+    c.message_received('io/owned-device/b1/hw', b'bad')
+    c.message_received('io/owned-device/b1/hw', b'0', True)
+    result = await async_get_config_entry_diagnostics(c.hass, MagicMock(entry_id='entry'))
+    assert result['feedback_counts']['command_echo'] == 1
+    assert result['feedback_counts']['invalid'] == 1
+    assert result['feedback_counts']['retained'] == 1
+    assert 'owned-device' not in json.dumps(result)
+    assert 'user@example' not in json.dumps(result)

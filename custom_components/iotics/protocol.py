@@ -133,3 +133,11 @@ def command(devices, token, channel, value):
     else:
         raise ValueError("Unsupported channel")
     return f"io/{token}/{channel}/sw", str(valid)
+
+
+def feedback_value(payload, minimum=0, maximum=1):
+    """Match Iotics 4.9's first-byte status decoder (function 14268)."""
+    if not isinstance(payload, bytes) or not payload:
+        return None
+    value = payload[0] - ord("0")
+    return value if minimum <= value <= maximum else None

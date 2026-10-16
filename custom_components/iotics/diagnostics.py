@@ -6,6 +6,8 @@ async def async_get_config_entry_diagnostics(hass, entry):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     return {
         "mqtt_connected": coordinator.connected,
+        "command_counts": dict(coordinator.command_stats),
+        "feedback_counts": dict(coordinator.feedback_stats),
         "last_discovery_success": coordinator.last_update_success,
         "device_count": len(coordinator.data or {}),
         "control_count": sum(len(d.controls) for d in (coordinator.data or {}).values()),

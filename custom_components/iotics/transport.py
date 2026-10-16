@@ -59,7 +59,7 @@ class Transport:
         parts = message.topic.split("/")
         with self._lock:
             owned = len(parts) >= 3 and parts[0] == "io" and parts[1] in self._tokens
-        if owned and len(message.payload) <= 16 and not self._stopped:
+        if owned and len(message.payload) <= 4096 and not self._stopped:
             self.loop.call_soon_threadsafe(self.message_callback, message.topic, bytes(message.payload), message.retain)
 
     def set_tokens(self, tokens):
