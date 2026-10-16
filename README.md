@@ -96,10 +96,10 @@ You can rename entities, assign rooms, and use supported controls in Home Assist
 | Sign in | Your Iotics account supplies an access token and device list. |
 | Connect | The integration subscribes to MQTT topics for devices returned by your account. |
 | Show state | Cloud values are provisional until the channel sends hardware feedback. |
-| Send a command | The integration waits up to **10 seconds** for matching feedback. |
+| Send a command | The displayed state updates **immediately after publishing**, marked as assumed. |
 | Keep current | Device discovery refreshes every **5 minutes**; status queries run every **minute**. |
 
-Commands are not queued for replay while offline. If the broker echoes the command but no channel feedback arrives within ten seconds, the requested state is shown as **assumed**, not hardware-confirmed. A contradictory hardware reply, missing broker echo, or lost connection still raises an error. Later hardware feedback overrides assumed state.
+Commands are not queued for replay while offline. Controls update immediately after a successful local publish, like the Iotics app. The displayed state is **assumed**, not proof of physical actuation. No hardware-confirmation timeout is raised. Later hardware feedback overrides the displayed state; actual send failures still raise an error and preserve the previous state.
 
 ## Troubleshooting
 
@@ -109,7 +109,7 @@ Commands are not queued for replay while offline. If the broker echoes the comma
 | **Authentication failed** | Verify the same credentials and account verification in the Iotics app. |
 | **Device unavailable** | Check the panel in the Iotics app and outbound HTTPS/WSS access on port 443. Availability requires valid hardware feedback. |
 | **No fan speed slider** | Expected for BLDC fans in this version. |
-| **Command confirmation timed out** | Check the physical device or the Iotics app before sending another command. |
+| **Old confirmation timeout still appears** | Update to version 0.1.4 or newer and restart Home Assistant. |
 | **Logo missing in HACS search** | Some HACS versions use the central branding service instead of the bundled icon; see below. |
 
 <details>
@@ -128,19 +128,15 @@ Account credentials are stored in Home Assistant's configuration-entry storage. 
 
 </details>
 
-### Panels without channel feedback
+### Immediate control updates
 
-Version 0.1.3 supports panels that operate but do not send matching channel feedback: a matching broker command echo permits an explicitly assumed state after ten seconds. This does not prove physical actuation. Hardware feedback remains authoritative.
+Version 0.1.4 removes the feedback wait. Switch and fan power controls update immediately after sending; supported fan-speed commands send power first when needed, then the speed. Home Assistant marks the state as assumed until channel feedback arrives. Broker command echoes do not count as hardware feedback.
 
-### Troubleshooting a command timeout
-
-Version 0.1.2 matches the app's first-byte status decoding and distinguishes send failures from missing feedback. It also includes anonymous command/feedback counters in diagnostics. This does not establish that all switch models respond to the implemented commands.
-
-If a control still fails, note whether the physical load changed, then open the Iotics integration menu under **Settings → Devices & services** and download its diagnostics. The counters distinguish command echoes, actual channel feedback, retained messages, and timeouts without exposing topics, device tokens, credentials, or payloads.
+If a physical device does not respond, download diagnostics from the Iotics integration menu under **Settings → Devices & services**. Counters show sends, assumed updates, send failures, and incoming feedback without credentials or device tokens.
 
 ## Development and verification
 
-**27 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
+**23 offline tests passed** using Python 3.12.14 and Home Assistant Core 2024.11.3. This is a compatibility-test baseline, not a recommendation to install an older Home Assistant version. Current production installation compatibility has not yet been verified.
 
 ```sh
 python -m pip install -r tests_ha/requirements.txt

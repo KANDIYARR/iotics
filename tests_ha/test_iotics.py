@@ -105,53 +105,10 @@ def coordinator(tmp_path):
     return c
 
 
-@pytest.mark.asyncio
-async def test_hardware_confirmation_and_ignored_messages(tmp_path):
-    c = coordinator(tmp_path)
-    switch = IoticsSwitch(c, 'account', 'owned-device', 'b1')
-    c.message_received('io/owned-device/b1/hw', b'0')
-    task = asyncio.create_task(switch.async_turn_on())
-    await asyncio.sleep(0)
-    assert switch.is_on is False
-    for topic, payload, retained in [('io/other/b1/hw', b'1', False), ('io/owned-device/b1/sw', b'1', False), ('io/owned-device/b1/hw', b'1', True), ('io/owned-device/b1/hw', b'2', False)]:
-        c.message_received(topic, payload, retained)
-    assert not task.done()
-    c.message_received('io/owned-device/b1/hw', b'1')
-    await task
-    assert switch.is_on is True
-    assert switch.device_info['name'] == 'Living room'
 
 
-@pytest.mark.asyncio
-async def test_disconnect_fails_pending_and_expires_availability(tmp_path):
-    c = coordinator(tmp_path)
-    task = asyncio.create_task(c.async_command('owned-device', 'b1', 1))
-    await asyncio.sleep(0)
-    c.connection_changed(False)
-    with pytest.raises(HomeAssistantError): await task
-    assert not c.is_available('owned-device')
-    c.connection_changed(True)
-    assert not c.is_available('owned-device')
-    c.message_received('io/owned-device/hwstatus', b'1')
-    c.last_seen['owned-device'] = time.monotonic() - 151
-    assert not c.is_available('owned-device')
 
 
-@pytest.mark.asyncio
-async def test_fan_waits_for_power_before_speed(tmp_path):
-    c = coordinator(tmp_path)
-    fan = IoticsFan(c, 'account', 'owned-device', 'f1')
-    c.message_received('io/owned-device/f1/hw', b'0')
-    task = asyncio.create_task(fan.async_set_percentage(60))
-    await asyncio.sleep(0)
-    c.transport.publish.assert_called_once_with('io/owned-device/f1/sw', '1')
-    c.message_received('io/owned-device/f1/hw', b'1')
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    c.transport.publish.assert_called_with('io/owned-device/l1/sw', '3')
-    c.message_received('io/owned-device/l1/hw', b'3')
-    await task
-    assert fan.percentage == 75
 
 
 @pytest.mark.asyncio
@@ -256,54 +213,12 @@ async def test_discovery_additions_and_removals(tmp_path):
     c.transport.set_tokens.assert_called_with({})
 
 
-@pytest.mark.asyncio
-async def test_turn_off_waits_for_actual_off_feedback(tmp_path):
-    c = coordinator(tmp_path)
-    c.message_received('io/owned-device/b1/hw', b'1')
-    switch = IoticsSwitch(c, 'account', 'owned-device', 'b1')
-    task = asyncio.create_task(switch.async_turn_off())
-    await asyncio.sleep(0)
-    c.transport.publish.assert_called_once_with('io/owned-device/b1/sw', '0')
-    c.message_received('io/owned-device/b1/sw', b'0')
-    c.message_received('io/owned-device/b1/hw', b'1')
-    assert switch.is_on is True
-    assert not task.done()
-    c.message_received('io/owned-device/b1/hw', b'0')
-    await task
-    assert switch.is_on is False
 
 
-@pytest.mark.asyncio
-async def test_send_failure_is_distinct_from_feedback_timeout(tmp_path):
-    c = coordinator(tmp_path)
-    c.transport.publish.side_effect = ConnectionError()
-    with pytest.raises(HomeAssistantError, match='Unable to send'):
-        await c.async_command('owned-device', 'b1', 0)
-    assert not c._pending
 
 
-@pytest.mark.asyncio
-async def test_feedback_timeout_reports_uncertain_outcome(tmp_path):
-    c = coordinator(tmp_path)
-    c.message_received('io/owned-device/b1/hw', b'1')
-    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=AsyncMock(side_effect=TimeoutError())):
-        with pytest.raises(HomeAssistantError, match='No Iotics command confirmation'):
-            await c.async_command('owned-device', 'b1', 0)
-    assert c.states[('owned-device', 'b1')] == 1
-    assert not c._pending
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("payload", [b"0", b"0\x00", b"0\r\n", b"0" + b"\x00" * 32])
-async def test_off_feedback_matches_app_first_byte_decoder(tmp_path, payload):
-    c = coordinator(tmp_path)
-    c.message_received('io/owned-device/b1/hw', b'1')
-    task = asyncio.create_task(c.async_command('owned-device', 'b1', 0))
-    await asyncio.sleep(0)
-    c.message_received('io/owned-device/b1/hw', payload)
-    await task
-    assert c.states[('owned-device', 'b1')] == 0
-    assert c.command_stats['confirmed'] == 1
 
 
 @pytest.mark.asyncio
@@ -322,47 +237,89 @@ async def test_diagnostics_contain_counts_without_identifiers(tmp_path):
     assert 'user@example' not in json.dumps(result)
 
 
+
+
+
+
+
+
 @pytest.mark.asyncio
-async def test_broker_echo_without_feedback_uses_assumed_state(tmp_path):
+@pytest.mark.parametrize("entity_type,channel", [(IoticsSwitch, "b1"), (IoticsFan, "f1")])
+async def test_immediate_on_off_without_feedback_or_wait(tmp_path, entity_type, channel):
     c = coordinator(tmp_path)
-    c.message_received('io/owned-device/b1/hw', b'1')
-    async def timeout(_future, timeout):
-        c.message_received('io/owned-device/b1/sw', b'0')
-        raise TimeoutError
-    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
-        await c.async_command('owned-device', 'b1', 0)
+    entity = entity_type(c, 'account', 'owned-device', channel)
+    with patch('custom_components.iotics.coordinator.asyncio.wait_for', side_effect=AssertionError('Must not wait')):
+        await entity.async_turn_on()
+        assert entity.is_on is True
+        assert entity.assumed_state is True
+        await entity.async_turn_off()
+        assert entity.is_on is False
+        assert entity.assumed_state is True
+    assert c.transport.publish.call_args_list[-1].args == (f'io/owned-device/{channel}/sw', '0')
+    assert c.command_stats['sent'] == 2
+
+
+@pytest.mark.asyncio
+async def test_hardware_feedback_overrides_assumed_state_and_echoes_do_not(tmp_path):
+    c = coordinator(tmp_path)
     entity = IoticsSwitch(c, 'account', 'owned-device', 'b1')
+    await entity.async_turn_off()
+    c.message_received('io/other/b1/hw', b'1')
+    c.message_received('io/owned-device/b1/hw', b'1', True)
+    c.message_received('io/owned-device/b1/hw', b'2')
+    c.message_received('io/owned-device/b1/sw', b'1')
     assert entity.is_on is False
     assert entity.assumed_state is True
-    assert c.command_stats['assumed'] == 1
-    assert c.command_stats['confirmed'] == 0
     c.message_received('io/owned-device/b1/hw', b'1')
     assert entity.is_on is True
     assert entity.assumed_state is False
 
 
 @pytest.mark.asyncio
-async def test_contradictory_hardware_state_is_not_overwritten_by_echo(tmp_path):
+async def test_publish_failure_preserves_previous_state(tmp_path):
     c = coordinator(tmp_path)
-    async def timeout(_future, timeout):
-        c.message_received('io/owned-device/b1/sw', b'0')
-        c.message_received('io/owned-device/b1/hw', b'1')
-        raise TimeoutError
-    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
-        with pytest.raises(HomeAssistantError, match='different state'):
-            await c.async_command('owned-device', 'b1', 0)
+    c.message_received('io/owned-device/b1/hw', b'1')
+    c.transport.publish.side_effect = ConnectionError()
+    with pytest.raises(HomeAssistantError, match='Unable to send'):
+        await c.async_command('owned-device', 'b1', 0)
     assert c.states[('owned-device', 'b1')] == 1
+    assert ('owned-device', 'b1') in c.confirmed
     assert c.command_stats['assumed'] == 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('payload,retained', [(b'1', False), (b'0', True)])
-async def test_wrong_or_retained_echo_cannot_assume_success(tmp_path, payload, retained):
+async def test_offline_and_closed_controls_do_not_publish(tmp_path):
     c = coordinator(tmp_path)
-    async def timeout(_future, timeout):
-        c.message_received('io/owned-device/b1/sw', payload, retained)
-        raise TimeoutError
-    with patch('custom_components.iotics.coordinator.asyncio.wait_for', new=timeout):
-        with pytest.raises(HomeAssistantError, match='No Iotics command confirmation'):
-            await c.async_command('owned-device', 'b1', 0)
-    assert c.command_stats['assumed'] == 0
+    c.connection_changed(False)
+    with pytest.raises(HomeAssistantError, match='unavailable'):
+        await c.async_command('owned-device', 'b1', 0)
+    c.connection_changed(True)
+    assert not c.is_available('owned-device')
+    c.message_received('io/owned-device/hwstatus', b'1')
+    assert c.is_available('owned-device')
+    c.close()
+    with pytest.raises(HomeAssistantError, match='unavailable'):
+        await c.async_command('owned-device', 'b1', 0)
+    c.transport.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fan_power_then_speed_sent_in_order_without_feedback(tmp_path):
+    c = coordinator(tmp_path)
+    fan = IoticsFan(c, 'account', 'owned-device', 'f1')
+    c.message_received('io/owned-device/f1/hw', b'0')
+    await fan.async_set_percentage(60)
+    assert [call.args for call in c.transport.publish.call_args_list] == [
+        ('io/owned-device/f1/sw', '1'), ('io/owned-device/l1/sw', '3')]
+    assert fan.percentage == 75
+    assert fan.assumed_state is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload', [b'0', b'0\x00', b'0\r\n', b'0' + b'\x00' * 32])
+async def test_feedback_first_byte_decoder(tmp_path, payload):
+    c = coordinator(tmp_path)
+    await c.async_command('owned-device', 'b1', 1)
+    c.message_received('io/owned-device/b1/hw', payload)
+    assert c.states[('owned-device', 'b1')] == 0
+    assert ('owned-device', 'b1') in c.confirmed
